@@ -2,29 +2,54 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"html/template"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"regexp"
+	"strings"
 )
 
 type Page struct {
-	Title string
-	Body  []byte
+	Title    string
+	Body     []byte
+	HTMLBody template.HTML
 }
 
 var templates = template.Must(template.ParseFiles("tmpl/edit.html", "tmpl/view.html", "tmpl/wiki_link.html"))
 var validPath = regexp.MustCompile("^/(edit|save|view)/([a-zA-Z0-9]+)$")
-var wikiLink = regexp.MustCompile("[[a-zA-z0-9]+]")
+var wikiLink = regexp.MustCompile(`\[\[([a-zA-Z0-9]+)\]\]`)
 
 func (p *Page) save() error {
 	filename := "data/" + p.Title + ".txt"
 	return ioutil.WriteFile(filename, p.Body, 0600)
 }
 
-func wikiLinkToHTML(wikiLink []byte) []byte {
-	return []byte("<a href=\"/view/LinkLink\">LINK</a>")
+func wikiLinkToHTML(link []byte) []byte {
+	linkText := string(link[2 : len(link)-2])
+	htmlLink := "<a href=\"/view/" + linkText + "\">" + linkText + "</a>"
+	return []byte(template.HTML(htmlLink))
+}
+
+func renderWikiLinks(body []byte) []byte {
+	return wikiLink.ReplaceAllFunc(body, wikiLinkToHTML)
+}
+
+func wrapParagraphs(body template.HTML) template.HTML {
+	lines := strings.Split(string(body), "\n")
+	var paragraphs []string
+	for _, line := range lines {
+		if strings.TrimSpace(line) != "" {
+			paragraphs = append(paragraphs, "<p>"+line+"</p>")
+		}
+	}
+	return template.HTML(strings.Join(paragraphs, "\n"))
+}
+
+func processBody(body []byte) template.HTML {
+	body = renderWikiLinks(body)
+	return wrapParagraphs(template.HTML(body))
 }
 
 func getTitle(w http.ResponseWriter, r *http.Request) (string, error) {
@@ -42,11 +67,11 @@ func loadPage(title string) (*Page, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Page{Title: title, Body: wikiLink.ReplaceAllFunc(body, wikiLinkToHTML)}, nil
+	return &Page{Title: title, Body: body}, nil
 }
 
 func renderTemplate(w http.ResponseWriter, tmpl string, p *Page) {
-	err := templates.ExecuteTemplate(w, tmpl + ".html", p)
+	err := templates.ExecuteTemplate(w, tmpl+".html", p)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
@@ -58,6 +83,7 @@ func viewHandler(w http.ResponseWriter, r *http.Request, title string) {
 		http.Redirect(w, r, "/edit/"+title, http.StatusFound)
 		return
 	}
+	p.HTMLBody = processBody(p.Body)
 	renderTemplate(w, "view", p)
 }
 
@@ -70,9 +96,14 @@ func editHandler(w http.ResponseWriter, r *http.Request, title string) {
 }
 
 func saveHandler(w http.ResponseWriter, r *http.Request, title string) {
+	err := r.ParseForm()
+	if err != nil {
+		http.Error(w, "Cannot parse form", http.StatusInternalServerError)
+		return
+	}
 	body := r.FormValue("body")
 	p := &Page{Title: title, Body: []byte(body)}
-	err := p.save()
+	err = p.save()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -84,7 +115,7 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/view/FrontPage", http.StatusFound)
 }
 
-func makeHandler(fn func (http.ResponseWriter, *http.Request, string)) http.HandlerFunc {
+func makeHandler(fn func(http.ResponseWriter, *http.Request, string)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		m := validPath.FindStringSubmatch(r.URL.Path)
 		if m == nil {
@@ -100,5 +131,6 @@ func main() {
 	http.HandleFunc("/edit/", makeHandler(editHandler))
 	http.HandleFunc("/save/", makeHandler(saveHandler))
 	http.HandleFunc("/", homeHandler)
+	fmt.Println("Starting server on :8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
