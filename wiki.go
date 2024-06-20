@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -17,7 +18,7 @@ type Page struct {
 	HTMLBody template.HTML
 }
 
-var templates = template.Must(template.ParseFiles("tmpl/edit.html", "tmpl/view.html", "tmpl/wiki_link.html"))
+var templates = template.Must(template.ParseFiles("tmpl/edit.html", "tmpl/view.html", "tmpl/wiki_link.html", "tmpl/all.html"))
 var validPath = regexp.MustCompile("^/(edit|save|view)/([a-zA-Z0-9]+)$")
 var wikiLink = regexp.MustCompile(`\[\[([a-zA-Z0-9]+)\]\]`)
 
@@ -115,6 +116,26 @@ func homeHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/view/FrontPage", http.StatusFound)
 }
 
+func allHandler(w http.ResponseWriter, r *http.Request) {
+	files, err := ioutil.ReadDir("data")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var titles []string
+	for _, file := range files {
+		if filepath.Ext(file.Name()) == ".txt" {
+			title := strings.TrimSuffix(file.Name(), ".txt")
+			titles = append(titles, title)
+		}
+	}
+	err = templates.ExecuteTemplate(w, "all.html", titles)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
 func makeHandler(fn func(http.ResponseWriter, *http.Request, string)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		m := validPath.FindStringSubmatch(r.URL.Path)
@@ -130,6 +151,7 @@ func main() {
 	http.HandleFunc("/view/", makeHandler(viewHandler))
 	http.HandleFunc("/edit/", makeHandler(editHandler))
 	http.HandleFunc("/save/", makeHandler(saveHandler))
+	http.HandleFunc("/all", allHandler)
 	http.HandleFunc("/", homeHandler)
 	fmt.Println("Starting server on :8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
