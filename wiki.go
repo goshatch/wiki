@@ -21,20 +21,42 @@ type Page struct {
 var templates = template.Must(template.ParseFiles("tmpl/edit.html", "tmpl/view.html", "tmpl/wiki_link.html", "tmpl/all.html"))
 var validPath = regexp.MustCompile("^/(edit|save|view)/([a-zA-Z0-9]+)$")
 var wikiLink = regexp.MustCompile(`\[\[([a-zA-Z0-9]+)\]\]`)
+var externalLink = regexp.MustCompile(`\[(https?://[^\s]+)\s([^\]]+)\]`)
 
 func (p *Page) save() error {
 	filename := "data/" + p.Title + ".txt"
 	return ioutil.WriteFile(filename, p.Body, 0600)
 }
 
+func htmlLink(href string, text string) []byte {
+	return []byte("<a href=\"" + href + "\">" + text + "</a>")
+}
+
 func wikiLinkToHTML(link []byte) []byte {
-	linkText := string(link[2 : len(link)-2])
-	htmlLink := "<a href=\"/view/" + linkText + "\">" + linkText + "</a>"
+	matches := wikiLink.FindSubmatch(link)
+	if matches == nil {
+		return link
+	}
+	linkText := string(matches[1])
+	htmlLink := htmlLink("/view/"+linkText, linkText)
+	return []byte(template.HTML(htmlLink))
+}
+
+func externalLinkToHTML(link []byte) []byte {
+	matches := externalLink.FindSubmatch(link)
+	if matches == nil {
+		return link
+	}
+	linkHref := string(matches[1])
+	linkText := string(matches[2])
+	htmlLink := htmlLink(linkHref, linkText)
 	return []byte(template.HTML(htmlLink))
 }
 
 func renderWikiLinks(body []byte) []byte {
-	return wikiLink.ReplaceAllFunc(body, wikiLinkToHTML)
+	body = wikiLink.ReplaceAllFunc(body, wikiLinkToHTML)
+	body = externalLink.ReplaceAllFunc(body, externalLinkToHTML)
+	return body
 }
 
 func wrapParagraphs(body template.HTML) template.HTML {

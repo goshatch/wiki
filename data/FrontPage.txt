@@ -1,3 +1,5 @@
 Welcome to the Wiki!
 
 For more info: [[AboutThisWiki]]
+
+A different kind of link: [https://gosha.net Gosha's beautiful homepage]
