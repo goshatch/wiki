@@ -19,8 +19,8 @@ type Page struct {
 }
 
 var templates = template.Must(template.ParseFiles("tmpl/edit.html", "tmpl/view.html", "tmpl/wiki_link.html", "tmpl/all.html"))
-var validPath = regexp.MustCompile("^/(edit|save|view)/([a-zA-Z0-9]+)$")
-var wikiLink = regexp.MustCompile(`\[\[([a-zA-Z0-9]+)\]\]`)
+var validPath = regexp.MustCompile(`^/(edit|save|view)/([\p{L}\p{N}]+)$`)
+var wikiLink = regexp.MustCompile(`\[\[([\p{L}\p{N}]+)\]\]`)
 var externalLink = regexp.MustCompile(`\[(https?://[^\s]+)\s([^\]]+)\]`)
 
 func (p *Page) save() error {
